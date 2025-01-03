@@ -1,19 +1,17 @@
-import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import * as readline from 'readline';
-import bs58 from 'bs58';
+const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+const readline = require('readline');
+const bs58 = require('bs58');
 
 class MeteoraSniper {
-    private connection: Connection;
-    private wallet: Keypair | null = null;
-    private tokenAddress: PublicKey | null = null;
-    private poolAddress: PublicKey | null = null;
-    private swapAmount: number = 0;
-    private slippage: number = 30;
-    private maxRetries: number = 1000; // 최대 시도 횟수
-    private retryCount: number = 0;
-
     constructor() {
         this.connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+        this.wallet = null;
+        this.tokenAddress = null;
+        this.poolAddress = null;
+        this.swapAmount = 0;
+        this.slippage = 30;
+        this.maxRetries = 1000;
+        this.retryCount = 0;
     }
 
     private getKeypairFromPrivateKey(privateKey: string): Keypair {
@@ -154,11 +152,70 @@ class MeteoraSniper {
             }
 
             console.log(`${++this.retryCount}번째 스왑 시도...`);
-            // 여기에 실제 스왑 로직 구현
+
+            // Meteora 프로그램 ID
+            const meteoraProgramId = new PublicKey('M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K');
+
+            // 스왑 instruction 생성
+            const swapIx = await this.createSwapInstruction(
+                meteoraProgramId,
+                this.poolAddress,
+                this.wallet.publicKey,
+                this.tokenAddress,
+                requiredAmount
+            );
+
+            // 트랜잭션 생성 및 전송
+            const transaction = new Transaction().add(swapIx);
+            const {blockhash} = await this.connection.getLatestBlockhash();
+            transaction.recentBlockhash = blockhash;
+            transaction.feePayer = this.wallet.publicKey;
+
+            // 트랜잭션 서명 및 전송
+            const signedTx = await this.wallet.signTransaction(transaction);
+            const txId = await this.connection.sendRawTransaction(signedTx.serialize());
             
+            console.log(`스왑 트랜잭션 전송됨: ${txId}`);
+            
+            // 트랜잭션 확인
+            const confirmation = await this.connection.confirmTransaction(txId);
+            if (confirmation.value.err) {
+                throw new Error('트랜잭션 실패');
+            }
+            
+            console.log('스왑 성공!');
+            process.exit(0);
+
         } catch (error) {
             console.error('스왑 실행 중 오류:', error);
+            setTimeout(() => this.executeBuy(), 100);
         }
+    }
+
+    private async createSwapInstruction(
+        programId: PublicKey,
+        poolAddress: PublicKey,
+        userAddress: PublicKey,
+        tokenAddress: PublicKey,
+        amount: number
+    ) {
+        // Meteora 스왑 instruction 데이터 구조
+        const data = Buffer.alloc(9);
+        data.writeUInt8(0, 0); // instruction index for swap
+        data.writeBigUInt64LE(BigInt(amount), 1);
+
+        const keys = [
+            {pubkey: poolAddress, isSigner: false, isWritable: true},
+            {pubkey: userAddress, isSigner: true, isWritable: true},
+            {pubkey: tokenAddress, isSigner: false, isWritable: true},
+            {pubkey: SystemProgram.programId, isSigner: false, isWritable: false},
+        ];
+
+        return new TransactionInstruction({
+            keys,
+            programId,
+            data
+        });
     }
 
     private async handlePoolUpdate(accountInfo: any) {
@@ -204,7 +261,41 @@ class MeteoraSniper {
         }
     }
 
-    // ... (나머지 코드는 이전과 동일)
+    private parsePoolData(data: Buffer) {
+        try {
+            // Meteora 풀 데이터 구조
+            return {
+                // 버전 및 타입 정보
+                version: data.readUInt8(0),
+                poolType: data.readUInt8(1),
+                // 토큰 A/B 리저브
+                tokenAReserve: data.readBigUInt64LE(8),
+                tokenBReserve: data.readBigUInt64LE(16),
+                // 수수료 관련
+                feeRate: data.readUInt16LE(24),
+                // 풀 상태
+                isActive: Boolean(data.readUInt8(26)),
+                lastUpdateTime: data.readBigUInt64LE(27)
+            };
+        } catch (error) {
+            console.error('풀 데이터 파싱 오류:', error);
+            return null;
+        }
+    }
+
+    private shouldBuy(poolData: any): boolean {
+        if (!poolData.isActive || !poolData.tokenAReserve || !poolData.tokenBReserve) {
+            return false;
+        }
+
+        // 최소 유동성 확인 (예: 0.1 SOL)
+        const minLiquidity = 0.1 * LAMPORTS_PER_SOL;
+        if (poolData.tokenAReserve < minLiquidity) {
+            return false;
+        }
+
+        return true;
+    }
 }
 
 // 봇 실행
