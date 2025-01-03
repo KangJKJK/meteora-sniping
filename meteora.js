@@ -29,55 +29,78 @@ class MeteoraSniper {
     async findMeteoraPools(tokenAddress) {
         try {
             console.log('Meteora 풀 주소를 검색중입니다...');
+            
+            // 한 번에 가져올 트랜잭션 수 제한
             const signatures = await this.connection.getSignaturesForAddress(
                 this.meteoraProgramId,
-                { limit: 1000 }
+                { limit: 100 }  // 100개로 제한
             );
 
-            for (const sig of signatures) {
-                try {
-                    const tx = await this.connection.getTransaction(sig.signature, {
-                        maxSupportedTransactionVersion: 0
-                    });
-                    
-                    if (!tx || !tx.transaction || !tx.transaction.message) continue;
+            // 트랜잭션을 10개씩 묶어서 처리
+            const batchSize = 10;
+            for (let i = 0; i < signatures.length; i += batchSize) {
+                const batch = signatures.slice(i, i + batchSize);
+                
+                // 병렬 처리로 변경
+                const promises = batch.map(async (sig) => {
+                    try {
+                        const tx = await this.connection.getTransaction(sig.signature, {
+                            maxSupportedTransactionVersion: 0
+                        });
 
-                    const accountKeys = tx.transaction.message.accountKeys;
-                    if (!accountKeys) continue;
+                        if (!tx?.transaction?.message?.accountKeys) return null;
 
-                    // 해당 토큰이 포함된 트랜잭션인지 확인
-                    const hasTargetToken = accountKeys.some(key => 
-                        key.toBase58() === tokenAddress.toBase58()
-                    );
-
-                    if (!hasTargetToken) continue;
-
-                    for (const accountKey of accountKeys) {
-                        const accountInfo = await this.connection.getAccountInfo(accountKey);
-                        if (!accountInfo || !accountInfo.data) continue;
-
-                        try {
-                            const poolData = this.parsePoolData(accountInfo.data);
-                            if (poolData && poolData.isActive) {
-                                const isUsdcPool = accountKeys.some(
-                                    key => key.equals(this.usdcAddress)
-                                );
-                                
-                                this.poolType = isUsdcPool ? 'USDC' : 'SOL';
-                                
-                                return {
-                                    poolAddress: accountKey,
-                                    poolData: poolData
-                                };
-                            }
-                        } catch (e) {
-                            continue;
+                        const accountKeys = tx.transaction.message.accountKeys;
+                        
+                        // 토큰 주소가 포함된 트랜잭션만 처리
+                        if (!accountKeys.some(key => key.toBase58() === tokenAddress.toBase58())) {
+                            return null;
                         }
+
+                        // 풀 데이터 확인
+                        const poolAccounts = await Promise.all(
+                            accountKeys.map(async (accountKey) => {
+                                try {
+                                    const accountInfo = await this.connection.getAccountInfo(accountKey);
+                                    if (!accountInfo?.data) return null;
+
+                                    const poolData = this.parsePoolData(accountInfo.data);
+                                    if (!poolData?.isActive) return null;
+
+                                    const isUsdcPool = accountKeys.some(
+                                        key => key.equals(this.usdcAddress)
+                                    );
+
+                                    return {
+                                        poolAddress: accountKey,
+                                        poolData,
+                                        type: isUsdcPool ? 'USDC' : 'SOL'
+                                    };
+                                } catch {
+                                    return null;
+                                }
+                            })
+                        );
+
+                        return poolAccounts.find(account => account !== null);
+                    } catch {
+                        return null;
                     }
-                } catch (error) {
-                    continue; // 개별 트랜잭션 오류는 무시하고 계속 진행
+                });
+
+                // 배치 처리 결과 확인
+                const results = await Promise.all(promises);
+                const pool = results.find(result => result !== null);
+                
+                if (pool) {
+                    this.poolType = pool.type;
+                    return pool;
                 }
+
+                // 요청 간 딜레이 추가
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
+
             throw new Error('활성화된 Meteora 풀을 찾을 수 없습니다.');
         } catch (error) {
             console.error('풀 검색 중 오류:', error);
