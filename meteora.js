@@ -36,7 +36,7 @@ class MeteoraSniper {
             console.log('지갑 주소:', this.wallet.publicKey.toString());
 
             const solAmountStr = await new Promise(resolve => {
-                rl.question('SOL로 스왑할 경우의 금액을 입력하세요(최소 0.1sol): ', resolve);
+                rl.question('스왑을 진행할 sol을 입력하세요(최소 0.1sol,계속반복스왑): ', resolve);
             });
             this.swapAmount.SOL = parseFloat(solAmountStr);
             
@@ -86,50 +86,75 @@ class MeteoraSniper {
     }
 
     async executeJupiterSwap() {
-        // 잔액 확인
-        const balance = await this.connection.getBalance(this.wallet.publicKey);
-        if (balance < 0.1 * LAMPORTS_PER_SOL) {
-            console.log('잔액이 부족합니다. 프로그램을 종료합니다.');
-            process.exit(0);
+        try {
+            // 잔액 확인
+            const balance = await this.connection.getBalance(this.wallet.publicKey);
+            if (balance < 0.1 * LAMPORTS_PER_SOL) {
+                console.log('잔액이 부족합니다. 프로그램을 종료합니다.');
+                process.exit(0);
+            }
+
+            const amount = this.swapAmount.SOL * LAMPORTS_PER_SOL;
+            
+            // Jupiter API를 통한 스왑 실행
+            console.log('스왑 견적 요청 중...');
+            const quoteResponse = await fetch(
+                `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${this.tokenAddress.toString()}&amount=${amount}&slippageBps=50`
+            );
+            const quoteData = await quoteResponse.json();
+
+            if (!quoteData.routes || quoteData.routes.length === 0) {
+                throw new Error('사용 가능한 스왑 경로가 없습니다.');
+            }
+
+            console.log('스왑 경로 찾음:', quoteData.routes[0]);
+
+            // 트랜잭션 생성
+            console.log('트랜잭션 생성 중...');
+            const transactionResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    route: quoteData.routes[0],
+                    userPublicKey: this.wallet.publicKey.toString(),
+                    wrapUnwrapSOL: true,
+                    computeUnitPriceMicroLamports: 1000  // 우선순위 높이기
+                })
+            });
+
+            if (!transactionResponse.ok) {
+                const errorData = await transactionResponse.json();
+                throw new Error(`트랜잭션 생성 실패: ${JSON.stringify(errorData)}`);
+            }
+
+            const transactionData = await transactionResponse.json();
+            console.log('트랜잭션 데이터 받음');
+
+            const transaction = Transaction.from(Buffer.from(transactionData.swapTransaction, 'base64'));
+            
+            // 트랜잭션 서명 및 전송
+            transaction.feePayer = this.wallet.publicKey;
+            transaction.recentBlockhash = (await this.connection.getLatestBlockhash()).blockhash;
+            
+            const signedTx = await this.wallet.signTransaction(transaction);
+            console.log('트랜잭션 서명 완료');
+
+            const txid = await this.connection.sendRawTransaction(signedTx.serialize(), {
+                skipPreflight: true,  // 사전 검증 건너뛰기
+                maxRetries: 3         // 재시도 횟수
+            });
+            console.log(`트랜잭션 전송됨: https://solscan.io/tx/${txid}`);
+
+            // 트랜잭션 확인
+            await this.connection.confirmTransaction(txid);
+            console.log('스왑 성공!');
+
+        } catch (error) {
+            console.log('스왑 실패 상세:', error.message);
+            throw error;  // 상위 에러 처리로 전달
         }
-
-        const amount = this.swapAmount.SOL * LAMPORTS_PER_SOL;
-        
-        // Jupiter API를 통한 스왑 실행
-        const quoteResponse = await fetch(
-            `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${this.tokenAddress.toString()}&amount=${amount}&slippageBps=50`
-        );
-        const quoteData = await quoteResponse.json();
-
-        if (!quoteData.routes || quoteData.routes.length === 0) {
-            throw new Error('사용 가능한 스왑 경로가 없습니다.');
-        }
-
-        // 트랜잭션 생성
-        const transactionResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                route: quoteData.routes[0],
-                userPublicKey: this.wallet.publicKey.toString(),
-                wrapUnwrapSOL: true
-            })
-        });
-
-        const transactionData = await transactionResponse.json();
-        const transaction = Transaction.from(Buffer.from(transactionData.swapTransaction, 'base64'));
-
-        // 트랜잭션 서명 및 전송
-        transaction.feePayer = this.wallet.publicKey;
-        const signedTx = await this.wallet.signTransaction(transaction);
-        const txid = await this.connection.sendRawTransaction(signedTx.serialize());
-        console.log(`트랜잭션 전송됨: https://solscan.io/tx/${txid}`);
-
-        // 트랜잭션 확인
-        await this.connection.confirmTransaction(txid);
-        console.log('스왑 성공!');
     }
 }
 
