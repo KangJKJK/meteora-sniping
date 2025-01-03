@@ -88,13 +88,13 @@ class MeteoraSniper {
 
             // SOL 스왑 금액 입력
             const solAmountStr = await new Promise(resolve => {
-                rl.question('SOL로 스왑할 경우의 금액을 입력하세요(최소 0.1sol): ', resolve);
+                rl.question('SOL로 스왑할 경우의 금액을 입력하세요(최소 0.1): ', resolve);
             });
             this.swapAmount.SOL = parseFloat(solAmountStr);
             
             // USDC 스왑 금액 입력
             const usdcAmountStr = await new Promise(resolve => {
-                rl.question('USDC로 스왑할 경우의 금액을 입력하세요: ', resolve);
+                rl.question('USDC로 스왑할 경우의 금액을 입력하세요(최소 10): ', resolve);
             });
             this.swapAmount.USDC = parseFloat(usdcAmountStr);
             
