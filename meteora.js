@@ -1,6 +1,6 @@
 import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import * as readline from 'readline';
-import * as bs58 from 'bs58';
+import bs58 from 'bs58';
 
 class MeteoraSniper {
     constructor() {
