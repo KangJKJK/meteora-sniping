@@ -31,13 +31,25 @@ mkdir -p meteora-bot
 cd meteora-bot
 
 # package.json 생성
-echo "package.json을 생성합니다..."
-npm init -y
+echo "package.json을 생성하고 설정합니다..."
+cat > package.json << EOF
+{
+  "name": "meteora-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@solana/web3.js": "^1.87.6",
+    "bs58": "^5.0.0",
+    "@project-serum/anchor": "^0.26.0",
+    "@solana/spl-token": "^0.3.9",
+    "decimal.js": "^10.4.3"
+  }
+}
+EOF
 
 # 필요한 npm 패키지 설치
 echo "필요한 npm 패키지를 설치합니다..."
-npm install @solana/web3.js
-npm install bs58
+npm install
 
 # meteora.js 파일 다운로드
 echo "meteora.js 파일을 다운로드합니다..."
