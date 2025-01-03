@@ -30,18 +30,18 @@ class MeteoraSniper {
         try {
             console.log('Meteora 풀 주소를 검색중입니다...');
             
-            // 한 번에 가져올 트랜잭션 수 제한
+            // 한 번에 가져올 트랜잭션 수 증가
             const signatures = await this.connection.getSignaturesForAddress(
                 this.meteoraProgramId,
-                { limit: 100 }  // 100개로 제한
+                { limit: 1000 }  // 1000개로 증가
             );
 
-            // 트랜잭션을 10개씩 묶어서 처리
-            const batchSize = 10;
+            // 트랜잭션을 100개씩 묶어서 처리
+            const batchSize = 100;  // 100개로 증가
             for (let i = 0; i < signatures.length; i += batchSize) {
                 const batch = signatures.slice(i, i + batchSize);
                 
-                // 병렬 처리로 변경
+                // 병렬 처리
                 const promises = batch.map(async (sig) => {
                     try {
                         const tx = await this.connection.getTransaction(sig.signature, {
@@ -97,8 +97,8 @@ class MeteoraSniper {
                     return pool;
                 }
 
-                // 요청 간 딜레이 추가
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // 요청 간 딜레이 약간 증가
+                await new Promise(resolve => setTimeout(resolve, 200));
             }
 
             throw new Error('활성화된 Meteora 풀을 찾을 수 없습니다.');
