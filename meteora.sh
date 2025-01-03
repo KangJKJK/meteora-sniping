@@ -37,25 +37,7 @@ npm init -y
 # 필요한 npm 패키지 설치
 echo "필요한 npm 패키지를 설치합니다..."
 npm install @solana/web3.js
-npm install typescript
-npm install ts-node
 npm install bs58
-npm install @types/node
-
-# TypeScript 설정 파일 생성
-echo "TypeScript 설정 파일을 생성합니다..."
-cat > tsconfig.json << EOL
-{
-  "compilerOptions": {
-    "target": "es2020",
-    "module": "commonjs",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
-  }
-}
-EOL
 
 # meteora.js 파일 다운로드
 echo "meteora.js 파일을 다운로드합니다..."
