@@ -96,10 +96,10 @@ class MeteoraSniper {
 
             const amount = this.swapAmount.SOL * LAMPORTS_PER_SOL;
             
-            // Jupiter API를 통한 스왑 실행
+            // 1. Jupiter API를 통한 스왑 견적 요청 (슬리피지 30%)
             console.log('스왑 견적 요청 중...');
             const quoteResponse = await fetch(
-                `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${this.tokenAddress.toString()}&amount=${amount}&slippageBps=50`
+                `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${this.tokenAddress.toString()}&amount=${amount}&slippageBps=3000&onlyDirectRoutes=true`
             );
             const quoteData = await quoteResponse.json();
 
@@ -109,18 +109,24 @@ class MeteoraSniper {
 
             console.log('스왑 경로 찾음:', quoteData.routes[0]);
 
-            // 트랜잭션 생성
-            console.log('트랜잭션 생성 중...');
+            // 2. 트랜잭션 준비
+            console.log('트랜잭션 준비 중...');
+            const { blockhash } = await this.connection.getLatestBlockhash('finalized');
+            
+            // 3. 트랜잭션 생성 (높은 우선순위)
             const transactionResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    route: quoteData.routes[0],
+                    quoteResponse: quoteData,
                     userPublicKey: this.wallet.publicKey.toString(),
                     wrapUnwrapSOL: true,
-                    computeUnitPriceMicroLamports: 1000  // 우선순위 높이기
+                    computeUnitPriceMicroLamports: 5000,  // 우선순위 대폭 상승
+                    prioritizationFeeLamports: 10000000,  // 0.01 SOL로 증가
+                    blockhash: blockhash,
+                    useSharedAccounts: true
                 })
             });
 
@@ -129,31 +135,34 @@ class MeteoraSniper {
                 throw new Error(`트랜잭션 생성 실패: ${JSON.stringify(errorData)}`);
             }
 
-            const transactionData = await transactionResponse.json();
+            const { swapTransaction } = await transactionResponse.json();
             console.log('트랜잭션 데이터 받음');
 
-            const transaction = Transaction.from(Buffer.from(transactionData.swapTransaction, 'base64'));
-            
-            // 트랜잭션 서명 및 전송
+            // 4. 트랜잭션 서명
+            const transaction = Transaction.from(Buffer.from(swapTransaction, 'base64'));
             transaction.feePayer = this.wallet.publicKey;
-            transaction.recentBlockhash = (await this.connection.getLatestBlockhash()).blockhash;
             
             const signedTx = await this.wallet.signTransaction(transaction);
             console.log('트랜잭션 서명 완료');
 
+            // 5. 트랜잭션 전송
             const txid = await this.connection.sendRawTransaction(signedTx.serialize(), {
-                skipPreflight: true,  // 사전 검증 건너뛰기
-                maxRetries: 3         // 재시도 횟수
+                skipPreflight: true,
+                maxRetries: 3
             });
             console.log(`트랜잭션 전송됨: https://solscan.io/tx/${txid}`);
 
-            // 트랜잭션 확인
-            await this.connection.confirmTransaction(txid);
+            // 6. 트랜잭션 확인
+            await this.connection.confirmTransaction({
+                signature: txid,
+                blockhash: blockhash,
+                lastValidBlockHeight: await this.connection.getBlockHeight()
+            });
             console.log('스왑 성공!');
 
         } catch (error) {
             console.log('스왑 실패 상세:', error.message);
-            throw error;  // 상위 에러 처리로 전달
+            throw error;
         }
     }
 }
