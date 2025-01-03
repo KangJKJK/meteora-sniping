@@ -13,6 +13,7 @@ class MeteoraSniper {
         this.swapAmount = 0;
         this.retryCount = 0;
         this.slippage = 30;
+        this.checkInterval = 500;
     }
 
     getKeypairFromPrivateKey(privateKey) {
@@ -112,7 +113,7 @@ class MeteoraSniper {
         if (!this.poolAddress) return;
 
         console.log('풀 모니터링 시작...');
-        console.log('유동성이 생성될 때까지 0.1초마다 확인합니다...');
+        console.log(`유동성이 생성될 때까지 0.5초마다 확인합니다...`);
         
         await this.checkPoolLiquidity();
 
@@ -121,7 +122,7 @@ class MeteoraSniper {
                 await this.handlePoolUpdate(accountInfo);
             } catch (error) {
                 console.error('풀 업데이트 처리 중 오류:', error);
-                setTimeout(() => this.checkPoolLiquidity(), 100);
+                setTimeout(() => this.checkPoolLiquidity(), this.checkInterval);
             }
         });
     }
@@ -225,15 +226,15 @@ class MeteoraSniper {
         
         try {
             const accountInfo = await this.connection.getAccountInfo(this.poolAddress);
-            if (accountInfo) {
-                await this.handlePoolUpdate(accountInfo);
-            } else {
-                console.log('⚠️ 풀이 아직 생성되지 않았습니다. 0.1초 후 재시도...');
-                setTimeout(() => this.checkPoolLiquidity(), 100);
+            if (!accountInfo) {
+                console.log('풀 데이터를 찾을 수 없습니다. 주소를 다시 확인해주세요.');
+                process.exit(1);
             }
+            
+            await this.handlePoolUpdate(accountInfo);
         } catch (error) {
             console.error('풀 확인 중 오류:', error);
-            setTimeout(() => this.checkPoolLiquidity(), 100);
+            setTimeout(() => this.checkPoolLiquidity(), this.checkInterval);
         }
     }
 
