@@ -51,9 +51,13 @@ cat > tsconfig.json << EOL
 }
 EOL
 
+# meteora.js 파일 다운로드
+echo "meteora.js 파일을 다운로드합니다..."
+curl -o meteora.js https://raw.githubusercontent.com/KangJKJK/meteora-sniping/main/meteora.js
+
 # meteora.js 파일을 meteora.ts로 복사 (TypeScript 파일로 변환)
 echo "meteora.ts 파일을 생성합니다..."
-cp ../meteora.js ./meteora.ts
+cp meteora.js meteora.ts
 
 # 실행 권한 부여
 chmod +x meteora.ts
