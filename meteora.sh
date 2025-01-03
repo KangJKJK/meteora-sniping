@@ -9,13 +9,19 @@ sudo apt-get install -y curl
 sudo apt-get install -y git
 sudo apt-get install -y build-essential
 
-# Node.js 설치 (최신 LTS 버전)
-echo "Node.js를 설치합니다..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# 기존 Node.js 제거
+echo "기존 Node.js를 제거합니다..."
+sudo apt-get remove nodejs npm -y
+sudo apt-get autoremove -y
+
+# Node.js 최신 LTS 버전 설치
+echo "Node.js 최신 버전을 설치합니다..."
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get update
 sudo apt-get install -y nodejs
 
-# npm 버전 확인
-echo "Node.js와 npm 버전을 확인합니다..."
+# Node.js 버전 확인
+echo "설치된 Node.js 버전:"
 node --version
 npm --version
 
@@ -55,12 +61,8 @@ EOL
 echo "meteora.js 파일을 다운로드합니다..."
 curl -o meteora.js https://raw.githubusercontent.com/KangJKJK/meteora-sniping/main/meteora.js
 
-# meteora.js 파일을 meteora.ts로 복사 (TypeScript 파일로 변환)
-echo "meteora.ts 파일을 생성합니다..."
-cp meteora.js meteora.ts
-
 # 실행 권한 부여
-chmod +x meteora.ts
+chmod +x meteora.js
 
 echo "설치가 완료되었습니다. 봇을 실행합니다..."
-npx ts-node meteora.ts 
+node meteora.js 
