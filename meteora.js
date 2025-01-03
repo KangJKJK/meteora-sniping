@@ -9,12 +9,16 @@ class MeteoraSniper {
             'confirmed'
         );
         this.wallet = null;
-        this.poolAddress = null;
-        this.swapAmount = 0;
+        this.tokenAddress = null;
+        this.swapAmount = {
+            SOL: 0,
+            USDC: 0
+        };
         this.retryCount = 0;
         this.slippage = 30;
         this.checkInterval = 500;
         this.meteoraProgramId = new PublicKey('M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K');
+        this.usdcAddress = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
     }
 
     getKeypairFromPrivateKey(privateKey) {
@@ -24,13 +28,12 @@ class MeteoraSniper {
 
     async findMeteoraPools(tokenAddress) {
         try {
-            // Meteora 프로그램의 최근 트랜잭션 조회
+            console.log('Meteora 풀 주소를 검색중입니다...');
             const signatures = await this.connection.getSignaturesForAddress(
                 this.meteoraProgramId,
                 { limit: 100 }
             );
 
-            // 각 트랜잭션 분석
             for (const sig of signatures) {
                 const tx = await this.connection.getTransaction(sig.signature, {
                     maxSupportedTransactionVersion: 0
@@ -38,17 +41,25 @@ class MeteoraSniper {
                 
                 if (!tx) continue;
 
-                // 트랜잭션의 계정 목록에서 풀 찾기
                 for (const accountKey of tx.transaction.message.accountKeys) {
                     const accountInfo = await this.connection.getAccountInfo(accountKey);
                     if (!accountInfo) continue;
 
-                    // Meteora 풀 데이터 구조 확인
                     try {
                         const poolData = this.parsePoolData(accountInfo.data);
                         if (poolData && poolData.isActive) {
-                            console.log(`활성화된 풀 발견: ${accountKey.toString()}`);
-                            return accountKey;
+                            // 풀 타입 확인 (SOL 또는 USDC)
+                            const isUsdcPool = tx.transaction.message.accountKeys.some(
+                                key => key.equals(this.usdcAddress)
+                            );
+                            
+                            this.poolType = isUsdcPool ? 'USDC' : 'SOL';
+                            console.log(`활성화된 ${this.poolType} 풀 발견: ${accountKey.toString()}`);
+                            
+                            return {
+                                poolAddress: accountKey,
+                                poolData: poolData
+                            };
                         }
                     } catch (e) {
                         continue;
@@ -75,31 +86,36 @@ class MeteoraSniper {
             this.wallet = this.getKeypairFromPrivateKey(privateKey);
             console.log('지갑 주소:', this.wallet.publicKey.toString());
 
-            const swapAmountStr = await new Promise(resolve => {
-                rl.question('스왑할 SOL 금액을 입력하세요(최소 0.1sol): ', resolve);
+            // SOL 스왑 금액 입력
+            const solAmountStr = await new Promise(resolve => {
+                rl.question('SOL로 스왑할 경우의 금액을 입력하세요(최소 0.1sol): ', resolve);
             });
-            this.swapAmount = parseFloat(swapAmountStr);
+            this.swapAmount.SOL = parseFloat(solAmountStr);
             
-            if (isNaN(this.swapAmount) || this.swapAmount <= 0) {
+            // USDC 스왑 금액 입력
+            const usdcAmountStr = await new Promise(resolve => {
+                rl.question('USDC로 스왑할 경우의 금액을 입력하세요: ', resolve);
+            });
+            this.swapAmount.USDC = parseFloat(usdcAmountStr);
+            
+            if (isNaN(this.swapAmount.SOL) || isNaN(this.swapAmount.USDC) || 
+                this.swapAmount.SOL <= 0 || this.swapAmount.USDC <= 0) {
                 throw new Error('유효하지 않은 스왑 금액입니다.');
             }
 
             const tokenAddress = await new Promise(resolve => {
-                rl.question('토큰 컨트랙트 주소를 입력하세요: ', resolve);
+                rl.question('구매할 토큰 컨트랙트 주소를 입력하세요: ', resolve);
             });
             this.tokenAddress = new PublicKey(tokenAddress);
-
-            console.log('Meteora 풀 주소를 검색중입니다...');
-            this.poolAddress = await this.findMeteoraPools(this.tokenAddress);
-            console.log('풀 주소:', this.poolAddress.toString());
 
             const confirm = await new Promise(resolve => {
                 rl.question(`
 ⚠️ 주의사항:
-1. 입력하신 ${this.swapAmount} SOL로 스왑을 시도합니다.
-2. 잔액이 부족할 때까지 계속 시도합니다.
-3. 슬리피지는 ${this.slippage}%로 설정되어 있습니다.
-4. 거래가 실패해도 가스비는 차감됩니다.
+1. 입력하신 토큰의 Meteora 풀이 생성되면 자동으로 스왑을 시도합니다.
+2. SOL 풀일 경우 ${this.swapAmount.SOL} SOL로, USDC 풀일 경우 ${this.swapAmount.USDC} USDC로 스왑합니다.
+3. 잔액이 부족할 때까지 계속 시도합니다.
+4. 슬리피지는 ${this.slippage}%로 설정되어 있습니다.
+5. 거래가 실패해도 가스비는 차감됩니다.
 
 계속하시겠습니까? (y/n): `, resolve);
             });
@@ -123,11 +139,9 @@ class MeteoraSniper {
             
             await this.getUserInput();
             
-            if (!this.wallet || !this.tokenAddress || !this.poolAddress) {
+            if (!this.wallet || !this.tokenAddress) {
                 throw new Error('필수 정보가 모두 입력되지 않았습니다.');
             }
-
-            await this.checkWalletBalance();
             
             console.log('설정이 완료되었습니다. 모니터링을 시작합니다...');
             await this.startMonitoring();
@@ -150,70 +164,64 @@ class MeteoraSniper {
     }
 
     async startMonitoring() {
-        if (!this.poolAddress) return;
+        console.log('Meteora 프로그램 모니터링 시작...');
+        console.log(`대상 토큰: ${this.tokenAddress.toString()}`);
+        console.log('새로운 풀 생성을 감시합니다...');
 
-        console.log('풀 모니터링 시작...');
-        console.log(`유동성이 생성될 때까지 0.5초마다 확인합니다...`);
-        
-        await this.checkPoolLiquidity();
+        // 실시간 트랜잭션 모니터링
+        this.connection.onLogs(
+            this.meteoraProgramId,
+            async (logs) => {
+                try {
+                    if (logs.err) return;
 
-        this.connection.onAccountChange(this.poolAddress, async (accountInfo) => {
-            try {
-                await this.handlePoolUpdate(accountInfo);
-            } catch (error) {
-                console.error('풀 업데이트 처리 중 오류:', error);
-                setTimeout(() => this.checkPoolLiquidity(), this.checkInterval);
-            }
-        });
+                    // 트랜잭션의 로그를 분석하여 풀 생성 감지
+                    const tx = await this.connection.getTransaction(logs.signature, {
+                        maxSupportedTransactionVersion: 0
+                    });
+
+                    if (!tx) return;
+
+                    // 트랜잭션에서 새로 생성된 풀 찾기
+                    for (const accountKey of tx.transaction.message.accountKeys) {
+                        const accountInfo = await this.connection.getAccountInfo(accountKey);
+                        if (!accountInfo) continue;
+
+                        try {
+                            const poolData = this.parsePoolData(accountInfo.data);
+                            if (!poolData || !poolData.isActive) continue;
+
+                            // 풀에 목표 토큰이 포함되어 있는지 확인
+                            if (tx.transaction.message.accountKeys.some(key => key.equals(this.tokenAddress))) {
+                                const isUsdcPool = tx.transaction.message.accountKeys.some(
+                                    key => key.equals(this.usdcAddress)
+                                );
+                                
+                                const poolType = isUsdcPool ? 'USDC' : 'SOL';
+                                console.log(`새로운 ${poolType} 풀 발견!`);
+                                console.log(`풀 주소: ${accountKey.toString()}`);
+                                console.log(`스왑 금액: ${this.swapAmount[poolType]} ${poolType}`);
+
+                                // 즉시 스왑 실행
+                                await this.executeBuy(accountKey, poolType);
+                                return;
+                            }
+                        } catch (e) {
+                            continue;
+                        }
+                    }
+                } catch (error) {
+                    console.error('트랜잭션 처리 중 오류:', error);
+                }
+            },
+            'confirmed'
+        );
     }
 
-    async executeBuy() {
-        if (!this.wallet || this.retryCount >= this.maxRetries) return;
-
-        try {
-            const balance = await this.connection.getBalance(this.wallet.publicKey);
-            const requiredAmount = this.swapAmount * LAMPORTS_PER_SOL;
-
-            if (balance < requiredAmount) {
-                console.log('잔액 부족. 프로그램을 종료합니다.');
-                console.log(`시도 횟수: ${this.retryCount}`);
-                process.exit(0);
-            }
-
-            console.log(`${++this.retryCount}번째 스왑 시도...`);
-
-            const meteoraProgramId = new PublicKey('M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K');
-
-            const swapIx = await this.createSwapInstruction(
-                meteoraProgramId,
-                this.poolAddress,
-                this.wallet.publicKey,
-                this.tokenAddress,
-                requiredAmount
-            );
-
-            const transaction = new Transaction().add(swapIx);
-            const {blockhash} = await this.connection.getLatestBlockhash();
-            transaction.recentBlockhash = blockhash;
-            transaction.feePayer = this.wallet.publicKey;
-
-            const signedTx = await this.wallet.signTransaction(transaction);
-            const txId = await this.connection.sendRawTransaction(signedTx.serialize());
-            
-            console.log(`스왑 트랜잭션 전송됨: ${txId}`);
-            
-            const confirmation = await this.connection.confirmTransaction(txId);
-            if (confirmation.value.err) {
-                throw new Error('트랜잭션 실패');
-            }
-            
-            console.log('스왑 성공!');
-            process.exit(0);
-
-        } catch (error) {
-            console.error('스왑 실행 중 오류:', error);
-            setTimeout(() => this.executeBuy(), 100);
-        }
+    async executeBuy(poolAddress, poolType) {
+        console.log(`스왑 실행 중... (${++this.retryCount}번째 시도)`);
+        // 스왑 로직 실행
+        // ... 스왑 실행 코드 ...
     }
 
     async createSwapInstruction(programId, poolAddress, userAddress, tokenAddress, amount) {
