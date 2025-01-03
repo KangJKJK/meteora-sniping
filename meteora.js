@@ -14,16 +14,12 @@ class MeteoraSniper {
         this.retryCount = 0;
     }
 
-    private getKeypairFromPrivateKey(privateKey: string): Keypair {
-        try {
-            const decoded = bs58.decode(privateKey);
-            return Keypair.fromSecretKey(decoded);
-        } catch (error) {
-            throw new Error('잘못된 개인키 형식입니다.');
-        }
+    getKeypairFromPrivateKey(privateKey) {
+        const decodedKey = bs58.decode(privateKey);
+        return Keypair.fromSecretKey(decodedKey);
     }
 
-    private async getUserInput(): Promise<void> {
+    async getUserInput() {
         const rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout
@@ -31,14 +27,14 @@ class MeteoraSniper {
 
         try {
             // 개인키 입력 받기
-            const privateKey = await new Promise<string>((resolve) => {
+            const privateKey = await new Promise((resolve) => {
                 rl.question('개인키를 입력하세요: ', resolve);
             });
             this.wallet = this.getKeypairFromPrivateKey(privateKey);
             console.log('지갑 주소:', this.wallet.publicKey.toString());
 
             // 스왑 금액 입력 받기
-            const swapAmountStr = await new Promise<string>((resolve) => {
+            const swapAmountStr = await new Promise((resolve) => {
                 rl.question('스왑할 SOL 금액을 입력하세요(최소 0.1sol): ', resolve);
             });
             this.swapAmount = parseFloat(swapAmountStr);
@@ -48,7 +44,7 @@ class MeteoraSniper {
             }
 
             // 경고 메시지 표시 및 확인
-            const confirm = await new Promise<string>((resolve) => {
+            const confirm = await new Promise((resolve) => {
                 rl.question(`
 ⚠️ 주의사항:
 1. 입력하신 ${this.swapAmount} SOL로 스왑을 시도합니다.
@@ -65,13 +61,13 @@ class MeteoraSniper {
             }
 
             // 토큰 주소 입력 받기
-            const tokenAddress = await new Promise<string>((resolve) => {
+            const tokenAddress = await new Promise((resolve) => {
                 rl.question('토큰 컨트랙트 주소를 입력하세요: ', resolve);
             });
             this.tokenAddress = new PublicKey(tokenAddress);
 
             // 풀 주소 입력 받기
-            const poolAddress = await new Promise<string>((resolve) => {
+            const poolAddress = await new Promise((resolve) => {
                 rl.question('풀 주소를 입력하세요: ', resolve);
             });
             this.poolAddress = new PublicKey(poolAddress);
@@ -107,7 +103,7 @@ class MeteoraSniper {
         }
     }
 
-    private async checkWalletBalance() {
+    async checkWalletBalance() {
         if (!this.wallet) return;
         
         const balance = await this.connection.getBalance(this.wallet.publicKey);
@@ -118,7 +114,7 @@ class MeteoraSniper {
         }
     }
 
-    private async startMonitoring() {
+    async startMonitoring() {
         if (!this.poolAddress) return;
 
         console.log('풀 모니터링 시작...');
@@ -138,7 +134,7 @@ class MeteoraSniper {
         });
     }
 
-    private async executeBuy() {
+    async executeBuy() {
         if (!this.wallet || this.retryCount >= this.maxRetries) return;
 
         try {
@@ -192,13 +188,7 @@ class MeteoraSniper {
         }
     }
 
-    private async createSwapInstruction(
-        programId: PublicKey,
-        poolAddress: PublicKey,
-        userAddress: PublicKey,
-        tokenAddress: PublicKey,
-        amount: number
-    ) {
+    async createSwapInstruction(programId, poolAddress, userAddress, tokenAddress, amount) {
         // Meteora 스왑 instruction 데이터 구조
         const data = Buffer.alloc(9);
         data.writeUInt8(0, 0); // instruction index for swap
@@ -218,7 +208,7 @@ class MeteoraSniper {
         });
     }
 
-    private async handlePoolUpdate(accountInfo: any) {
+    async handlePoolUpdate(accountInfo) {
         try {
             if (!accountInfo.data) {
                 console.log('풀 데이터가 없습니다. 0.1초 후 재시도...');
@@ -244,7 +234,7 @@ class MeteoraSniper {
         }
     }
 
-    private async checkPoolLiquidity() {
+    async checkPoolLiquidity() {
         if (!this.poolAddress) return;
         
         try {
@@ -261,7 +251,7 @@ class MeteoraSniper {
         }
     }
 
-    private parsePoolData(data: Buffer) {
+    parsePoolData(data) {
         try {
             // Meteora 풀 데이터 구조
             return {
@@ -283,7 +273,7 @@ class MeteoraSniper {
         }
     }
 
-    private shouldBuy(poolData: any): boolean {
+    shouldBuy(poolData) {
         if (!poolData.isActive || !poolData.tokenAReserve || !poolData.tokenBReserve) {
             return false;
         }
