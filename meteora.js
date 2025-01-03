@@ -5,7 +5,7 @@ import bs58 from 'bs58';
 class MeteoraSniper {
     constructor() {
         this.connection = new Connection(
-            'https://mainnet.helius-rpc.com/?api-key=1d0e4d43-c938-47d8-82b3-2fdec0889646',
+            'https://api.mainnet-beta.solana.com',
             'confirmed'
         );
         this.wallet = null;
@@ -14,11 +14,52 @@ class MeteoraSniper {
         this.retryCount = 0;
         this.slippage = 30;
         this.checkInterval = 500;
+        this.meteoraProgramId = new PublicKey('M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K');
     }
 
     getKeypairFromPrivateKey(privateKey) {
         const decodedKey = bs58.decode(privateKey);
         return Keypair.fromSecretKey(decodedKey);
+    }
+
+    async findMeteoraPools(tokenAddress) {
+        try {
+            // Meteora 프로그램의 최근 트랜잭션 조회
+            const signatures = await this.connection.getSignaturesForAddress(
+                this.meteoraProgramId,
+                { limit: 100 }
+            );
+
+            // 각 트랜잭션 분석
+            for (const sig of signatures) {
+                const tx = await this.connection.getTransaction(sig.signature, {
+                    maxSupportedTransactionVersion: 0
+                });
+                
+                if (!tx) continue;
+
+                // 트랜잭션의 계정 목록에서 풀 찾기
+                for (const accountKey of tx.transaction.message.accountKeys) {
+                    const accountInfo = await this.connection.getAccountInfo(accountKey);
+                    if (!accountInfo) continue;
+
+                    // Meteora 풀 데이터 구조 확인
+                    try {
+                        const poolData = this.parsePoolData(accountInfo.data);
+                        if (poolData && poolData.isActive) {
+                            console.log(`활성화된 풀 발견: ${accountKey.toString()}`);
+                            return accountKey;
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+            throw new Error('활성화된 Meteora 풀을 찾을 수 없습니다.');
+        } catch (error) {
+            console.error('풀 검색 중 오류:', error);
+            throw error;
+        }
     }
 
     async getUserInput() {
@@ -43,11 +84,20 @@ class MeteoraSniper {
                 throw new Error('유효하지 않은 스왑 금액입니다.');
             }
 
+            const tokenAddress = await new Promise(resolve => {
+                rl.question('토큰 컨트랙트 주소를 입력하세요: ', resolve);
+            });
+            this.tokenAddress = new PublicKey(tokenAddress);
+
+            console.log('Meteora 풀 주소를 검색중입니다...');
+            this.poolAddress = await this.findMeteoraPools(this.tokenAddress);
+            console.log('풀 주소:', this.poolAddress.toString());
+
             const confirm = await new Promise(resolve => {
                 rl.question(`
 ⚠️ 주의사항:
 1. 입력하신 ${this.swapAmount} SOL로 스왑을 시도합니다.
-2. 잔액이 부족할 때까지 최대 ${this.maxRetries}번 시도합니다.
+2. 잔액이 부족할 때까지 계속 시도합니다.
 3. 슬리피지는 ${this.slippage}%로 설정되어 있습니다.
 4. 거래가 실패해도 가스비는 차감됩니다.
 
@@ -58,16 +108,6 @@ class MeteoraSniper {
                 console.log('프로그램을 종료합니다.');
                 process.exit(0);
             }
-
-            const tokenAddress = await new Promise(resolve => {
-                rl.question('토큰 컨트랙트 주소를 입력하세요: ', resolve);
-            });
-            this.tokenAddress = new PublicKey(tokenAddress);
-
-            const poolAddress = await new Promise(resolve => {
-                rl.question('풀 주소를 입력하세요: ', resolve);
-            });
-            this.poolAddress = new PublicKey(poolAddress);
 
         } catch (error) {
             console.error('입력 오류:', error);
