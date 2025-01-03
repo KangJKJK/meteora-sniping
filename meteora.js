@@ -1,15 +1,17 @@
 import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import readline from 'readline';
+import * as readline from 'readline';
 import bs58 from 'bs58';
 
 class MeteoraSniper {
     constructor() {
-        this.connection = new Connection('https://api.mainnet-beta.solana.com');
+        this.connection = new Connection(
+            'https://mainnet.helius-rpc.com/?api-key=1d0e4d43-c938-47d8-82b3-2fdec0889646',
+            'confirmed'
+        );
         this.wallet = null;
         this.poolAddress = null;
         this.swapAmount = 0;
         this.retryCount = 0;
-        this.maxRetries = 3;
         this.slippage = 30;
     }
 
