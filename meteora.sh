@@ -51,12 +51,12 @@ EOF
 echo "필요한 npm 패키지를 설치합니다..."
 npm install
 
-# meteora.js 파일 다운로드
-echo "meteora.js 파일을 다운로드합니다..."
-curl -o meteora.js https://raw.githubusercontent.com/KangJKJK/meteora-sniping/main/meteora.js
+# meteora.js 파일을 meteora.mjs로 다운로드
+echo "meteora.mjs 파일을 다운로드합니다..."
+curl -o meteora.mjs https://raw.githubusercontent.com/KangJKJK/meteora-sniping/main/meteora.js
 
 # 실행 권한 부여
-chmod +x meteora.js
+chmod +x meteora.mjs
 
 echo "설치가 완료되었습니다. 봇을 실행합니다..."
-node meteora.js 
+node meteora.mjs
