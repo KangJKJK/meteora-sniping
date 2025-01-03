@@ -99,7 +99,7 @@ class MeteoraSniper {
             // 1. Jupiter API를 통한 스왑 견적 요청 (슬리피지 30%)
             console.log('스왑 견적 요청 중...');
             const quoteResponse = await fetch(
-                `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${this.tokenAddress.toString()}&amount=${amount}&slippageBps=3000&onlyDirectRoutes=true`
+                `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${this.tokenAddress.toString()}&amount=${amount}&slippageBps=3000`
             );
             const quoteData = await quoteResponse.json();
 
@@ -124,7 +124,7 @@ class MeteoraSniper {
                     userPublicKey: this.wallet.publicKey.toString(),
                     wrapUnwrapSOL: true,
                     computeUnitPriceMicroLamports: 5000,  // 우선순위 대폭 상승
-                    prioritizationFeeLamports: 10000000,  // 0.01 SOL로 증가
+                    prioritizationFeeLamports: 10000000,  // 0.01 SOL
                     blockhash: blockhash,
                     useSharedAccounts: true
                 })
