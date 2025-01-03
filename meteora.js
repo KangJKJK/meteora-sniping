@@ -35,37 +35,47 @@ class MeteoraSniper {
             );
 
             for (const sig of signatures) {
-                const tx = await this.connection.getTransaction(sig.signature, {
-                    maxSupportedTransactionVersion: 0
-                });
-                
-                if (!tx) continue;
+                try {
+                    const tx = await this.connection.getTransaction(sig.signature, {
+                        maxSupportedTransactionVersion: 0
+                    });
+                    
+                    if (!tx || !tx.transaction || !tx.transaction.message) continue;
 
-                if (!tx.transaction.message.accountKeys.some(key => key.toString() === tokenAddress.toString())) {
-                    continue;
-                }
+                    const accountKeys = tx.transaction.message.accountKeys;
+                    if (!accountKeys) continue;
 
-                for (const accountKey of tx.transaction.message.accountKeys) {
-                    const accountInfo = await this.connection.getAccountInfo(accountKey);
-                    if (!accountInfo) continue;
+                    // 해당 토큰이 포함된 트랜잭션인지 확인
+                    const hasTargetToken = accountKeys.some(key => 
+                        key.toBase58() === tokenAddress.toBase58()
+                    );
 
-                    try {
-                        const poolData = this.parsePoolData(accountInfo.data);
-                        if (poolData && poolData.isActive) {
-                            const isUsdcPool = tx.transaction.message.accountKeys.some(
-                                key => key.equals(this.usdcAddress)
-                            );
-                            
-                            this.poolType = isUsdcPool ? 'USDC' : 'SOL';
-                            
-                            return {
-                                poolAddress: accountKey,
-                                poolData: poolData
-                            };
+                    if (!hasTargetToken) continue;
+
+                    for (const accountKey of accountKeys) {
+                        const accountInfo = await this.connection.getAccountInfo(accountKey);
+                        if (!accountInfo || !accountInfo.data) continue;
+
+                        try {
+                            const poolData = this.parsePoolData(accountInfo.data);
+                            if (poolData && poolData.isActive) {
+                                const isUsdcPool = accountKeys.some(
+                                    key => key.equals(this.usdcAddress)
+                                );
+                                
+                                this.poolType = isUsdcPool ? 'USDC' : 'SOL';
+                                
+                                return {
+                                    poolAddress: accountKey,
+                                    poolData: poolData
+                                };
+                            }
+                        } catch (e) {
+                            continue;
                         }
-                    } catch (e) {
-                        continue;
                     }
+                } catch (error) {
+                    continue; // 개별 트랜잭션 오류는 무시하고 계속 진행
                 }
             }
             throw new Error('활성화된 Meteora 풀을 찾을 수 없습니다.');
@@ -384,4 +394,4 @@ class MeteoraSniper {
 
 console.log('Meteora 스나이핑 봇을 시작합니다...');
 const bot = new MeteoraSniper();
-bot.initialize().catch(console.error);  
+bot.initialize().catch(console.error); 
