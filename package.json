@@ -1,11 +1,11 @@
 {
+  "name": "meteora-bot",
+  "version": "1.0.0",
   "dependencies": {
-    "@solana/web3.js": "^1.87.0",
-    "@solana/spl-token": "^0.3.8",
-    "dotenv": "^16.0.3",
-    "bs58": "^5.0.0"
-  },
-  "scripts": {
-    "start": "ts-node src/tokenSniper.ts"
+    "@solana/web3.js": "^1.87.6",
+    "bs58": "^5.0.0",
+    "@project-serum/anchor": "^0.26.0",
+    "@solana/spl-token": "^0.3.9",
+    "decimal.js": "^10.4.3"
   }
-} 
+}
