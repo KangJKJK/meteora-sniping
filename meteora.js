@@ -10,6 +10,7 @@ class MeteoraSniper {
         this.swapAmount = 0;
         this.retryCount = 0;
         this.maxRetries = 3;
+        this.slippage = 30;
     }
 
     getKeypairFromPrivateKey(privateKey) {
