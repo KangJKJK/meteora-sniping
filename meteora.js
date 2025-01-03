@@ -1,17 +1,15 @@
-const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
-const readline = require('readline');
-const bs58 = require('bs58');
+import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import * as readline from 'readline';
+import * as bs58 from 'bs58';
 
 class MeteoraSniper {
     constructor() {
-        this.connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+        this.connection = new Connection('https://api.mainnet-beta.solana.com');
         this.wallet = null;
-        this.tokenAddress = null;
         this.poolAddress = null;
         this.swapAmount = 0;
-        this.slippage = 30;
-        this.maxRetries = 1000;
         this.retryCount = 0;
+        this.maxRetries = 3;
     }
 
     getKeypairFromPrivateKey(privateKey) {
@@ -26,15 +24,13 @@ class MeteoraSniper {
         });
 
         try {
-            // 개인키 입력 받기
-            const privateKey = await new Promise((resolve) => {
+            const privateKey = await new Promise(resolve => {
                 rl.question('개인키를 입력하세요: ', resolve);
             });
             this.wallet = this.getKeypairFromPrivateKey(privateKey);
             console.log('지갑 주소:', this.wallet.publicKey.toString());
 
-            // 스왑 금액 입력 받기
-            const swapAmountStr = await new Promise((resolve) => {
+            const swapAmountStr = await new Promise(resolve => {
                 rl.question('스왑할 SOL 금액을 입력하세요(최소 0.1sol): ', resolve);
             });
             this.swapAmount = parseFloat(swapAmountStr);
@@ -43,8 +39,7 @@ class MeteoraSniper {
                 throw new Error('유효하지 않은 스왑 금액입니다.');
             }
 
-            // 경고 메시지 표시 및 확인
-            const confirm = await new Promise((resolve) => {
+            const confirm = await new Promise(resolve => {
                 rl.question(`
 ⚠️ 주의사항:
 1. 입력하신 ${this.swapAmount} SOL로 스왑을 시도합니다.
@@ -60,14 +55,12 @@ class MeteoraSniper {
                 process.exit(0);
             }
 
-            // 토큰 주소 입력 받기
-            const tokenAddress = await new Promise((resolve) => {
+            const tokenAddress = await new Promise(resolve => {
                 rl.question('토큰 컨트랙트 주소를 입력하세요: ', resolve);
             });
             this.tokenAddress = new PublicKey(tokenAddress);
 
-            // 풀 주소 입력 받기
-            const poolAddress = await new Promise((resolve) => {
+            const poolAddress = await new Promise(resolve => {
                 rl.question('풀 주소를 입력하세요: ', resolve);
             });
             this.poolAddress = new PublicKey(poolAddress);
@@ -84,14 +77,12 @@ class MeteoraSniper {
         try {
             console.log('스나이핑 봇 설정을 시작합니다...');
             
-            // 사용자 입력 받기
             await this.getUserInput();
             
             if (!this.wallet || !this.tokenAddress || !this.poolAddress) {
                 throw new Error('필수 정보가 모두 입력되지 않았습니다.');
             }
 
-            // 지갑 잔액 확인
             await this.checkWalletBalance();
             
             console.log('설정이 완료되었습니다. 모니터링을 시작합니다...');
@@ -120,10 +111,8 @@ class MeteoraSniper {
         console.log('풀 모니터링 시작...');
         console.log('유동성이 생성될 때까지 0.1초마다 확인합니다...');
         
-        // 초기 풀 확인 시작
         await this.checkPoolLiquidity();
 
-        // 실시간 계정 변경 모니터링
         this.connection.onAccountChange(this.poolAddress, async (accountInfo) => {
             try {
                 await this.handlePoolUpdate(accountInfo);
@@ -149,10 +138,8 @@ class MeteoraSniper {
 
             console.log(`${++this.retryCount}번째 스왑 시도...`);
 
-            // Meteora 프로그램 ID
             const meteoraProgramId = new PublicKey('M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K');
 
-            // 스왑 instruction 생성
             const swapIx = await this.createSwapInstruction(
                 meteoraProgramId,
                 this.poolAddress,
@@ -161,19 +148,16 @@ class MeteoraSniper {
                 requiredAmount
             );
 
-            // 트랜잭션 생성 및 전송
             const transaction = new Transaction().add(swapIx);
             const {blockhash} = await this.connection.getLatestBlockhash();
             transaction.recentBlockhash = blockhash;
             transaction.feePayer = this.wallet.publicKey;
 
-            // 트랜잭션 서명 및 전송
             const signedTx = await this.wallet.signTransaction(transaction);
             const txId = await this.connection.sendRawTransaction(signedTx.serialize());
             
             console.log(`스왑 트랜잭션 전송됨: ${txId}`);
             
-            // 트랜잭션 확인
             const confirmation = await this.connection.confirmTransaction(txId);
             if (confirmation.value.err) {
                 throw new Error('트랜잭션 실패');
@@ -189,9 +173,8 @@ class MeteoraSniper {
     }
 
     async createSwapInstruction(programId, poolAddress, userAddress, tokenAddress, amount) {
-        // Meteora 스왑 instruction 데이터 구조
         const data = Buffer.alloc(9);
-        data.writeUInt8(0, 0); // instruction index for swap
+        data.writeUInt8(0, 0);
         data.writeBigUInt64LE(BigInt(amount), 1);
 
         const keys = [
@@ -253,17 +236,12 @@ class MeteoraSniper {
 
     parsePoolData(data) {
         try {
-            // Meteora 풀 데이터 구조
             return {
-                // 버전 및 타입 정보
                 version: data.readUInt8(0),
                 poolType: data.readUInt8(1),
-                // 토큰 A/B 리저브
                 tokenAReserve: data.readBigUInt64LE(8),
                 tokenBReserve: data.readBigUInt64LE(16),
-                // 수수료 관련
                 feeRate: data.readUInt16LE(24),
-                // 풀 상태
                 isActive: Boolean(data.readUInt8(26)),
                 lastUpdateTime: data.readBigUInt64LE(27)
             };
@@ -278,7 +256,6 @@ class MeteoraSniper {
             return false;
         }
 
-        // 최소 유동성 확인 (예: 0.1 SOL)
         const minLiquidity = 0.1 * LAMPORTS_PER_SOL;
         if (poolData.tokenAReserve < minLiquidity) {
             return false;
@@ -288,7 +265,6 @@ class MeteoraSniper {
     }
 }
 
-// 봇 실행
 console.log('Meteora 스나이핑 봇을 시작합니다...');
 const bot = new MeteoraSniper();
 bot.initialize().catch(console.error); 
